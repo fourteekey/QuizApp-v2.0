@@ -32,7 +32,7 @@ class QuizAPIView(APIView):
             type=openapi.TYPE_OBJECT,
             properties={
                 'name': openapi.Schema(type=openapi.TYPE_STRING, description='Максимум 100 символов.'),
-                'descriptions': openapi.Schema(type=openapi.TYPE_STRING, description='Максимум 1000 символов.'),
+                'description': openapi.Schema(type=openapi.TYPE_STRING, description='Максимум 1000 символов.'),
                 'date_start': openapi.Schema(type=openapi.TYPE_STRING, description='Формат "dd.mm.yyyy"'),
                 'date_end': openapi.Schema(type=openapi.TYPE_STRING, description='Формат "dd.mm.yyyy"'),
             })
@@ -40,7 +40,7 @@ class QuizAPIView(APIView):
     def post(self, request):
         token = request.query_params.get('token', None)
         name = request.data.get('name', None)
-        description = request.data.get('descriptions', None)
+        description = request.data.get('description', None)
         date_start = request.data.get('date_start', None)
         date_end = request.data.get('date_end', None)
 
@@ -70,7 +70,7 @@ class QuizAPIView(APIView):
             type=openapi.TYPE_OBJECT,
             properties={
                 'name': openapi.Schema(type=openapi.TYPE_STRING, description='Максимум 100 символов.'),
-                'descriptions': openapi.Schema(type=openapi.TYPE_STRING, description='Максимум 1000 символов.'),
+                'description': openapi.Schema(type=openapi.TYPE_STRING, description='Максимум 1000 символов.'),
                 'date_end': openapi.Schema(type=openapi.TYPE_STRING, description='Формат "dd.mm.yyyy"'),
             })
     )
@@ -79,13 +79,12 @@ class QuizAPIView(APIView):
         quiz_id = request.query_params.get('quiz', None)
 
         name = request.data.get('name', None)
-        description = request.data.get('descriptions', None)
+        description = request.data.get('description', None)
         date_end = request.data.get('date_end', None)
 
         if not token or not quiz_id:
             return Response({'error': 'В запросе отсутсвуют обязательные параметры.'},
                             status=status.HTTP_400_BAD_REQUEST)
-
         user = services.check_user(token)
         if not user or not user.is_superuser:
             return Response({'error': 'Неверный токен пользователя или пользователь не является админом.'},
@@ -93,9 +92,11 @@ class QuizAPIView(APIView):
 
         quiz = services.update_quiz(quiz_id=quiz_id, name=name, description=description, date_end=date_end,
                                     author=user)
-        if not quiz:
+        if not quiz and date_end:
             return Response({'error': 'Дата введена неверно, проверьте формат и данные. Пример: \'02.12.2007 15:46\'.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        elif not quiz:
+            return Response({'error': 'ID не найден..'}, status=status.HTTP_400_BAD_REQUEST)
         return Response(quiz, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
@@ -120,7 +121,7 @@ class QuizAPIView(APIView):
         quiz = services.delete_quiz(quiz_id=quiz_id, author=user)
         if not quiz: return Response({'error': 'Опрос не найден.'}, status=status.HTTP_204_NO_CONTENT)
 
-        return Response(quiz, status=status.HTTP_200_OK)
+        return Response(status=status.HTTP_200_OK)
 
 
 class QuestionAPIView(APIView):
@@ -143,8 +144,9 @@ class QuestionAPIView(APIView):
                                                                         '<code>1 - Ответ текстом</code>'
                                                                         '<code>2 - Выбор одного варианта</code>'
                                                                         '<code>3 - Выбор нескольких вариантов.</code>'),
-                            'variable': openapi.Schema(type=openapi.TYPE_ARRAY, description='Список вариантов ответа.',
-                                                       items=openapi.Schema(type=openapi.TYPE_STRING))
+                            'variable_answer': openapi.Schema(type=openapi.TYPE_ARRAY,
+                                                              description='Список вариантов ответа.',
+                                                              items=openapi.Schema(type=openapi.TYPE_STRING))
                         })),
             }))
     def post(self, request):
@@ -152,7 +154,6 @@ class QuestionAPIView(APIView):
         quiz_id = request.query_params.get('quiz', None)
 
         questions = request.data.get('questions', None)
-
         if not token or not quiz_id or not questions:
             return Response({'error': 'В запросе отсутсвуют обязательные параметры.'},
                             status=status.HTTP_400_BAD_REQUEST)
@@ -181,8 +182,8 @@ class QuestionAPIView(APIView):
                                                             '<code>1 - Ответ текстом</code>'
                                                             '<code>2 - Выбор одного варианта</code>'
                                                             '<code>3 - Выбор нескольких вариантов.</code>'),
-                'variable': openapi.Schema(type=openapi.TYPE_ARRAY, description='Список вариантов ответа.',
-                                           items=openapi.Schema(type=openapi.TYPE_STRING))
+                'variable_answer': openapi.Schema(type=openapi.TYPE_ARRAY, description='Список вариантов ответа.',
+                                                  items=openapi.Schema(type=openapi.TYPE_STRING))
             }))
     def patch(self, request):
         token = request.query_params.get('token', None)
@@ -264,7 +265,8 @@ class QuizCreateAnswerAPIView(APIView):
                         properties={
                             'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Question id ID'),
                             'text': openapi.Schema(type=openapi.TYPE_STRING, description='Максимум 100 символов.'),
-                            'variable': openapi.Schema(type=openapi.TYPE_ARRAY, description='Список id вариантов ответа.',
+                            'variable': openapi.Schema(type=openapi.TYPE_ARRAY,
+                                                       description='Список id вариантов ответа.',
                                                        items=openapi.Schema(type=openapi.TYPE_INTEGER))
                         })),
             }))
@@ -272,7 +274,10 @@ class QuizCreateAnswerAPIView(APIView):
         token = request.query_params.get('token', None)
         quiz_id = request.query_params.get('quiz', None)
         if not token or not quiz_id: return Response({'error': 'В запросе отсутсвуют обязательные параметры.'},
-                                      status=status.HTTP_400_BAD_REQUEST)
+                                                     status=status.HTTP_400_BAD_REQUEST)
+        answers = request.data.get('answers', None)
+        if not isinstance(answers, list):
+            return Response({'error': 'Проверьте формат'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = services.check_user(token)
         if not user:
